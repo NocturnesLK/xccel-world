@@ -34,6 +34,7 @@ interface CachedElements {
   aiInfoBar: HTMLElement;
   aiArea: HTMLElement;
   aiHand: HTMLElement;
+  divider: HTMLElement;
   playerHand: HTMLElement;
   playerArea: HTMLElement;
   playerInfoBar: HTMLElement;
@@ -133,6 +134,7 @@ export class GameRenderer {
     this.root.append(startScreen, board, bottomPanel, victoryOverlay);
     this.els = {
       startScreen, gameBoard: board, aiInfoBar, aiArea, aiHand,
+      divider,
       playerHand, playerArea, playerInfoBar,
       bottomPanel, logContainer, gameLog, actionHint, actionButtons, victoryOverlay,
     };
@@ -148,6 +150,7 @@ export class GameRenderer {
     this.renderHand(state.players[0], false, mode);
     this.renderPlayerArea(state.players[0], false, state, mode);
     this.renderInfoBar(state.players[0], false, state);
+    this.renderBattleDivider(state);
     this.renderBottomPanel(state, mode);
   }
 
@@ -157,14 +160,36 @@ export class GameRenderer {
     const el = isAI ? this.els.aiInfoBar : this.els.playerInfoBar;
     const name = isAI ? 'AI' : 'PLAYER';
     const cur = (isAI && state.currentPlayerIndex === 1) || (!isAI && state.currentPlayerIndex === 0);
-    const phase = PHASE_NAMES[state.phase] ?? state.phase;
     el.innerHTML = `
       <span class="player-name">${name}${cur ? ' ◀' : ''}</span>
       <span class="stat">牌库: <span class="stat-value">${player.deck.length}</span></span>
       <span class="stat">弃牌: <span class="stat-value">${player.discard.length}</span></span>
       <span class="stat">手牌: <span class="stat-value">${player.hand.length}</span></span>
-      <span class="stat">氮气: <span class="stat-value">${player.nitro.length}</span></span>
-      ${cur ? `<span class="phase-indicator"><span class="phase-label ${state.phase}">${phase}</span></span><span class="turn-counter">T${state.turnNumber}</span>` : ''}`;
+      <span class="stat">氮气: <span class="stat-value">${player.nitro.length}</span></span>`;
+  }
+
+  private renderBattleDivider(state: GameState): void {
+    const activePlayerIndex = state.currentPlayerIndex;
+    const phase = PHASE_NAMES[state.phase] ?? state.phase;
+
+    // AI side
+    const aiActive = activePlayerIndex === 1;
+    const aiPhaseHtml = aiActive ? `<span class="phase-label ${state.phase}">${phase}</span>` : '';
+    const aiClass = aiActive ? 'active' : '';
+
+    // Player side
+    const playerActive = activePlayerIndex === 0;
+    const playerPhaseHtml = playerActive ? `<span class="phase-label ${state.phase}">${phase}</span>` : '';
+    const playerClass = playerActive ? 'active' : '';
+
+    this.els.divider.innerHTML = `
+      <div class="divider-content">
+        <span class="divider-player ai ${aiClass}">AI ${aiPhaseHtml}</span>
+        <span class="vs-text">⚡ VS ⚡</span>
+        <span class="divider-player player ${playerClass}">${playerPhaseHtml} PLAYER</span>
+        <span class="divider-turn">T${state.turnNumber}</span>
+      </div>
+    `;
   }
 
   private renderPlayerArea(p: PlayerState, isAI: boolean, state: GameState, mode: InteractionMode): void {
@@ -278,16 +303,17 @@ export class GameRenderer {
   private renderHand(player: PlayerState, isAI: boolean, mode: InteractionMode): void {
     const container = isAI ? this.els.aiHand : this.els.playerHand;
     container.innerHTML = '';
+    if (isAI) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'flex';
     for (const card of player.hand) {
-      if (isAI) {
-        container.appendChild(this.createCardBack());
-      } else {
-        const el = this.createCardElement(card, true);
-        el.classList.add(`suit-${card.suit.toLowerCase()}`);
-        this.applyHandCardMode(el, card, mode);
-        el.addEventListener('click', () => this.callbacks.onCardClick(card.id, 'hand'));
-        container.appendChild(el);
-      }
+      const el = this.createCardElement(card, true);
+      el.classList.add(`suit-${card.suit.toLowerCase()}`);
+      this.applyHandCardMode(el, card, mode);
+      el.addEventListener('click', () => this.callbacks.onCardClick(card.id, 'hand'));
+      container.appendChild(el);
     }
   }
 

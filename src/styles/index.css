@@ -423,19 +423,73 @@ body {
   position: relative;
 }
 
-.battle-divider::after {
-  content: '⚡ VS ⚡';
+.divider-content {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   background: var(--bg-primary);
-  padding: 0 12px;
+  padding: 4px 16px;
   font-family: var(--font-heading);
-  font-size: 10px;
-  color: var(--accent-cyan);
-  letter-spacing: 2px;
+  font-size: 11px;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.divider-player {
+  color: var(--text-dim);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 1px;
+}
+
+.divider-player.ai.active {
+  color: var(--accent-magenta);
+  text-shadow: 0 0 8px var(--accent-magenta-dim);
+  font-weight: 700;
+}
+
+.divider-player.player.active {
+  color: var(--accent-cyan);
+  text-shadow: 0 0 8px var(--accent-cyan-dim);
+  font-weight: 700;
+}
+
+.divider-player .phase-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+  box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.05);
+}
+
+.vs-text {
+  color: var(--accent-amber);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 0 4px;
+}
+
+.divider-turn {
+  background: rgba(255, 170, 0, 0.1);
+  border: 1px solid var(--accent-amber-dim);
+  color: var(--accent-amber);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 /* === Bottom Panel (Log + Actions) === */
@@ -1113,6 +1167,31 @@ body {
 
   .victory-modal .victory-type {
     font-size: 14px !important;
+  }
+
+  /* Battle Divider mobile layout */
+  .divider-content {
+    font-size: 9px !important;
+    gap: 4px !important;
+    padding: 2px 8px !important;
+    border-radius: 12px !important;
+  }
+  .divider-player {
+    gap: 4px !important;
+    font-size: 9px !important;
+  }
+  .divider-player .phase-label {
+    font-size: 8px !important;
+    padding: 0.5px 5px !important;
+  }
+  .vs-text {
+    font-size: 9px !important;
+    padding: 0 2px !important;
+  }
+  .divider-turn {
+    padding: 0.5px 4px !important;
+    font-size: 8.5px !important;
+    margin-left: 2px !important;
   }
 }
 

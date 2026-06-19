@@ -21,12 +21,16 @@ export function isCoreCard(card: Card): boolean {
 
 /** Generate the image path for a card face. */
 export function getCardImagePath(card: Card): string {
-  return `/Poker/PNG/${card.suit}${card.rank}.png`;
+  const base = import.meta.env.BASE_URL;
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  return `${cleanBase}Poker/PNG/${card.suit}${card.rank}.png`;
 }
 
 /** Card back image path. */
 export function getCardBackImagePath(): string {
-  return '/Poker/PNG/Background.png';
+  const base = import.meta.env.BASE_URL;
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  return `${cleanBase}Poker/PNG/Background.png`;
 }
 
 /** Create a full 52-card deck (no jokers). */
