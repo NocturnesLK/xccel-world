@@ -40,11 +40,37 @@ const W = {
   COLLISION_REMOVE_SPEED: 18,
   COLLISION_REMOVE_ACCEL: 12,
   COLLISION_CORE_HIT: 9999,
+  CORE_J_ACTIVE: 8,
+  CORE_Q_ACTIVE: 6,
+  CORE_K_ACTIVE: 7,
 };
 
 // ---------------------------------------------------------------------------
 // Board evaluation
 // ---------------------------------------------------------------------------
+
+function getCoreActivationScore(player: PlayerState): number {
+  if (!player.core) return 0;
+  const coreRank = player.core.rank;
+  const driveCards = getDriveCards(player);
+  let activeCount = 0;
+
+  for (const { wc } of driveCards) {
+    const r = wc.card.rank;
+    if (coreRank === 'J') {
+      if (['A', '2', '3', '4'].includes(r)) activeCount++;
+    } else if (coreRank === 'Q') {
+      if (['A', '5', '6', '7'].includes(r)) activeCount++;
+    } else if (coreRank === 'K') {
+      if (['A', '8', '9', '10'].includes(r)) activeCount++;
+    }
+  }
+
+  if (coreRank === 'J') return activeCount * W.CORE_J_ACTIVE;
+  if (coreRank === 'Q') return activeCount * W.CORE_Q_ACTIVE;
+  if (coreRank === 'K') return activeCount * W.CORE_K_ACTIVE;
+  return 0;
+}
 
 function evaluateBoard(state: GameState, forPlayer: 0 | 1): number {
   const me = state.players[forPlayer];
@@ -60,6 +86,7 @@ function evaluateBoard(state: GameState, forPlayer: 0 | 1): number {
   }
   score += me.nitro.length * W.NITRO_CARD;
   score += me.hand.length * W.HAND_CARD;
+  score += getCoreActivationScore(me);
 
   // Opponent's field
   for (const wc of opp.wheels) {
@@ -70,6 +97,7 @@ function evaluateBoard(state: GameState, forPlayer: 0 | 1): number {
   }
   score += opp.nitro.length * W.OPP_NITRO;
   score += opp.hand.length * W.OPP_HAND;
+  score -= getCoreActivationScore(opp);
 
   // Victory proximity: maxAccel (4 speed + 4 nitro)
   const speedCount = getSpeedCount(me);
@@ -81,6 +109,34 @@ function evaluateBoard(state: GameState, forPlayer: 0 | 1): number {
   if (state.winner === opp.id) score -= 100000;
 
   return score;
+}
+
+function getDecelSortValue(player: PlayerState, wc: WheelCard): number {
+  let val = getCardValue(wc.card);
+  // Accel cards are much more valuable to keep since decelerating them discards them completely.
+  if (wc.state === 'accel') {
+    val += 100;
+  }
+
+  // Resonance awareness: check how critical this card is to the player's core and drive suits.
+  const suit = wc.card.suit;
+  let matchCount = 0;
+  if (player.core && player.core.suit === suit) matchCount++;
+  for (const otherWc of player.wheels) {
+    if (otherWc && (otherWc.state === 'speed' || otherWc.state === 'accel') && otherWc.card.suit === suit) {
+      matchCount++;
+    }
+  }
+
+  // If matchCount is 2, it is a critical pair for Accel Resonance (which needs core + drive >= 2 of same suit).
+  // If matchCount is 1, it is a single card of that suit, allowing Recover Resonance.
+  if (matchCount === 2) {
+    val += 25;
+  } else if (matchCount === 1) {
+    val += 15;
+  }
+
+  return val;
 }
 
 function simulateSettlePhase(state: GameState, playerIndex: number): GameState {
@@ -111,12 +167,9 @@ function simulateSettlePhase(state: GameState, playerIndex: number): GameState {
       }
     }
 
-    // Sort drive cards exactly as in decideSettleDeceleration
+    // Sort drive cards using resonance-aware decel sort value
     const sorted = driveCards.sort((a, b) => {
-      if (a.wc.state !== b.wc.state) {
-        return a.wc.state === 'speed' ? -1 : 1; // prefer to decel speed over accel
-      }
-      return getCardValue(a.wc.card) - getCardValue(b.wc.card);
+      return getDecelSortValue(player, a.wc) - getDecelSortValue(player, b.wc);
     });
 
     const slots = sorted.slice(0, diff).map(d => d.slot);
@@ -227,20 +280,39 @@ export function decideSettleDeceleration(state: GameState, count: number): GameA
   const player = getAIPlayer(state);
   const driveCards = getDriveCards(player);
 
-  // Prefer to decelerate low-value cards and accel cards (since accel→discard)
+  // Sort drive cards using resonance-aware decel sort value
   const sorted = driveCards.sort((a, b) => {
-    // Accel cards are worse to lose (they get discarded), so actually prefer to decel speed cards
-    // Speed cards just become decel (can be recovered), accel cards get fully discarded
-    // Strategy: decelerate speed cards with lowest values first
-    if (a.wc.state !== b.wc.state) {
-      return a.wc.state === 'speed' ? -1 : 1; // prefer to decel speed over accel
-    }
-    return getCardValue(a.wc.card) - getCardValue(b.wc.card);
+    return getDecelSortValue(player, a.wc) - getDecelSortValue(player, b.wc);
   });
 
   const slots = sorted.slice(0, count).map(d => d.slot);
   log.info(`Settle deceleration: slots ${slots.join(',')}`);
   return { type: 'settleDeceleration', slots };
+}
+
+function getResonancePriority(player: PlayerState, card: Card, type: 'accel' | 'recover'): number {
+  const suit = card.suit;
+  if (type === 'recover') {
+    if (player.resonanceRecoverSuits.includes(suit)) return 0;
+    let count = 0;
+    if (player.core && player.core.suit === suit) count++;
+    for (const wc of player.wheels) {
+      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
+        count++;
+      }
+    }
+    return count >= 1 ? 20 : 0;
+  } else { // accel
+    if (player.resonanceAccelSuit !== null && player.resonanceAccelSuit !== suit) return 0;
+    let count = 0;
+    if (player.core && player.core.suit === suit) count++;
+    for (const wc of player.wheels) {
+      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
+        count++;
+      }
+    }
+    return count >= 2 ? 30 : 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,16 +329,45 @@ export function decidePlayAction(state: GameState): GameAction {
   for (const card of actions.updateCards) {
     const simState = cloneState(state);
     const result = executeUpdate(simState, { type: 'update', cardId: card.id });
-    const score = evaluateBoardFuture(result.state, state.currentPlayerIndex) + 5;
-    candidates.push({ action: { type: 'update', cardId: card.id }, score, description: `update core with ${card.rank}` });
+    
+    // Evaluate resonance penalty
+    let resonancePenalty = 0;
+    if (player.core) {
+      const currentSuit = player.core.suit;
+      const newSuit = card.suit;
+      if (currentSuit !== newSuit) {
+        const driveCards = getDriveCards(player);
+        const currentSuitDriveCount = driveCards.filter(d => d.wc.card.suit === currentSuit).length;
+        const newSuitDriveCount = driveCards.filter(d => d.wc.card.suit === newSuit).length;
+        
+        const currentAccelRes = 1 + currentSuitDriveCount;
+        const newAccelRes = 1 + newSuitDriveCount;
+        
+        const currentRecoverRes = 1 + currentSuitDriveCount;
+        const newRecoverRes = 1 + newSuitDriveCount;
+        
+        if (currentAccelRes >= 2 && newAccelRes < 2) {
+          resonancePenalty -= 35;
+        } else if (currentRecoverRes >= 1 && newRecoverRes < 1) {
+          resonancePenalty -= 15;
+        }
+      }
+    }
+
+    const score = evaluateBoardFuture(result.state, state.currentPlayerIndex) + 5 + resonancePenalty;
+    candidates.push({ action: { type: 'update', cardId: card.id }, score, description: `update core with ${card.rank} (${card.suit})` });
   }
 
   // === Accel ===
   if (actions.canAccel) {
-    const energyCards = actions.accelCards
-      .sort((a, b) => getCardValue(b) - getCardValue(a)); // prefer high value
+    const energyCards = [...actions.accelCards]
+      .sort((a, b) => {
+        const priorityA = getResonancePriority(player, a, 'accel') + getCardValue(a);
+        const priorityB = getResonancePriority(player, b, 'accel') + getCardValue(b);
+        return priorityB - priorityA; // descending
+      });
 
-    for (const card of energyCards.slice(0, 3)) { // limit simulation count
+    for (const card of energyCards.slice(0, 5)) { // limit simulation count to 5
       for (const slot of actions.emptySlots.slice(0, 2)) {
         const simState = cloneState(state);
         const result = executeAccel(simState, { type: 'accel', cardId: card.id, wheelSlot: slot });
@@ -274,7 +375,7 @@ export function decidePlayAction(state: GameState): GameAction {
         candidates.push({
           action: { type: 'accel', cardId: card.id, wheelSlot: slot },
           score,
-          description: `accel ${card.rank} to slot ${slot}`,
+          description: `accel ${card.rank} (${card.suit}) to slot ${slot}`,
         });
       }
     }
@@ -282,10 +383,14 @@ export function decidePlayAction(state: GameState): GameAction {
 
   // === Recover ===
   if (actions.canRecover) {
-    const energyCards = actions.recoverCards
-      .sort((a, b) => getCardValue(b) - getCardValue(a));
+    const energyCards = [...actions.recoverCards]
+      .sort((a, b) => {
+        const priorityA = getResonancePriority(player, a, 'recover') + getCardValue(a);
+        const priorityB = getResonancePriority(player, b, 'recover') + getCardValue(b);
+        return priorityB - priorityA;
+      });
 
-    for (const card of energyCards.slice(0, 3)) {
+    for (const card of energyCards.slice(0, 5)) { // limit simulation count to 5
       for (const slot of actions.decelSlots) {
         const simState = cloneState(state);
         const result = executeRecover(simState, { type: 'recover', cardId: card.id, wheelSlot: slot });
@@ -293,7 +398,7 @@ export function decidePlayAction(state: GameState): GameAction {
         candidates.push({
           action: { type: 'recover', cardId: card.id, wheelSlot: slot },
           score,
-          description: `recover slot ${slot} with ${card.rank}`,
+          description: `recover slot ${slot} with ${card.rank} (${card.suit})`,
         });
       }
     }
@@ -328,47 +433,23 @@ export function decidePlayAction(state: GameState): GameAction {
 // Collision planning
 // ---------------------------------------------------------------------------
 
-function planCollision(state: GameState): ScoredAction | null {
-  const player = getAIPlayer(state);
-  const speedCards = getSpeedCards(player);
-  if (speedCards.length === 0) return null;
-
+function buildPayment(player: PlayerState, targetEnergy: number): { cardIds: string[]; energyPaid: number } | null {
   const energyInHand = player.hand.filter(c => isEnergyCard(c));
-  const totalHandEnergy = energyInHand.reduce((sum, c) => sum + getCardValue(c), 0);
-  const totalNitroEnergy = player.nitro.length * NITRO_ENERGY_VALUE;
-  const totalAvailable = Math.min(totalHandEnergy + totalNitroEnergy, MAX_COLLISION_ENERGY);
-
-  if (totalAvailable <= 0) return null;
-
-  // Find the best attacker (can afford)
-  const affordable = speedCards.filter(s => getCardValue(s.wc.card) <= totalAvailable);
-  if (affordable.length === 0) return null;
-
-  // Check targets
-  const targets = getValidCollisionTargets(state);
-  if (targets.length === 0) return null;
-
-  // Simple strategy: pick highest value attacker that we can afford
-  affordable.sort((a, b) => getCardValue(b.wc.card) - getCardValue(a.wc.card));
-  const attacker = affordable[0];
-  const attackerValue = getCardValue(attacker.wc.card);
-
-  // Build payment: use lowest value hand cards first, then nitro
-  const paymentIds: string[] = [];
-  let paid = 0;
   const sortedEnergy = [...energyInHand].sort((a, b) => getCardValue(a) - getCardValue(b));
 
+  const paymentIds: string[] = [];
+  let paid = 0;
+
   for (const card of sortedEnergy) {
-    if (paid >= attackerValue) break;
+    if (paid >= targetEnergy) break;
     if (paid + getCardValue(card) <= MAX_COLLISION_ENERGY) {
       paymentIds.push(card.id);
       paid += getCardValue(card);
     }
   }
 
-  // Use nitro if still not enough
-  if (paid < attackerValue && player.nitro.length > 0) {
-    for (let i = player.nitro.length - 1; i >= 0 && paid < attackerValue; i--) {
+  if (paid < targetEnergy && player.nitro.length > 0) {
+    for (let i = player.nitro.length - 1; i >= 0 && paid < targetEnergy; i--) {
       if (paid + NITRO_ENERGY_VALUE <= MAX_COLLISION_ENERGY) {
         paymentIds.push(player.nitro[i].id);
         paid += NITRO_ENERGY_VALUE;
@@ -376,107 +457,133 @@ function planCollision(state: GameState): ScoredAction | null {
     }
   }
 
-  if (paid < attackerValue) return null;
+  if (paid < targetEnergy) {
+    return null;
+  }
 
-  // Evaluate collision outcome
-  let bestScore = -Infinity;
-  let bestTarget: number | 'core' = targets[0];
-  const opp = state.players[state.currentPlayerIndex === 0 ? 1 : 0];
+  return { cardIds: paymentIds, energyPaid: paid };
+}
 
-  for (const target of targets) {
-    let score = 0;
-    if (target === 'core') {
-      score = W.COLLISION_CORE_HIT;
-    } else {
-      const targetWc = opp.wheels[target];
-      if (!targetWc) continue;
-      if (targetWc.state === 'accel') {
-        score = W.COLLISION_REMOVE_ACCEL;
-      } else if (targetWc.state === 'decel') {
-        score = W.COLLISION_REMOVE_ACCEL; // easy removal
-      } else {
-        // Speed vs speed
-        const targetValue = getCardValue(targetWc.card);
-        if (attackerValue > targetValue) {
-          score = W.COLLISION_REMOVE_SPEED + (targetValue * 2);
-        } else if (attackerValue === targetValue) {
-          score = -5; // both decel, usually not worth it
-        } else {
-          score = -20; // we get slowed, bad
-        }
+function findBestSimulatedAttack(
+  simState: GameState,
+  currentPlayerIndex: 0 | 1
+): { attackerSlot: number; targetSlot: number | 'core'; nextState: GameState; score: number } | null {
+  const attackers = getValidAttackers(simState);
+  const targets = getValidCollisionTargets(simState);
+
+  if (attackers.length === 0 || targets.length === 0) {
+    return null;
+  }
+
+  let bestResult: {
+    attackerSlot: number;
+    targetSlot: number | 'core';
+    nextState: GameState;
+    score: number;
+  } | null = null;
+
+  for (const attackerSlot of attackers) {
+    for (const targetSlot of targets) {
+      const attackRes = executeCollisionAttack(simState, {
+        type: 'collisionAttack',
+        attackerSlot,
+        targetSlot,
+      });
+      const score = evaluateBoardFuture(attackRes.state, currentPlayerIndex);
+
+      if (!bestResult || score > bestResult.score) {
+        bestResult = {
+          attackerSlot,
+          targetSlot,
+          nextState: attackRes.state,
+          score,
+        };
       }
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      bestTarget = target;
     }
   }
 
-  // Only collide if the outcome is positive
-  if (bestScore <= 0) return null;
+  return bestResult;
+}
 
-  // Simulate the full collision
-  const simState = cloneState(state);
-  const startResult = executeStartCollision(simState, { type: 'startCollision', paymentCardIds: paymentIds });
-  const afterStart = startResult.state;
+function planCollision(state: GameState): ScoredAction | null {
+  const player = getAIPlayer(state);
+  const speedCards = getSpeedCards(player);
+  if (speedCards.length === 0) return null;
 
-  // Execute the attack
-  const attackResult = executeCollisionAttack(afterStart, {
-    type: 'collisionAttack', attackerSlot: attacker.slot, targetSlot: bestTarget,
-  });
+  const minSpeedValue = Math.min(...speedCards.map(s => getCardValue(s.wc.card)));
+  const targets = getValidCollisionTargets(state);
+  if (targets.length === 0) return null;
 
-  const finalScore = evaluateBoardFuture(attackResult.state, state.currentPlayerIndex);
+  // We try payment targets from minSpeedValue up to MAX_COLLISION_ENERGY (10)
+  const uniquePayments = new Map<string, { cardIds: string[]; energyPaid: number }>();
 
-  return {
-    action: { type: 'startCollision', paymentCardIds: paymentIds },
-    score: finalScore,
-    description: `collision: pay ${paid}, attacker slot ${attacker.slot} → target ${bestTarget}`,
-  };
+  for (let e = minSpeedValue; e <= MAX_COLLISION_ENERGY; e++) {
+    const pay = buildPayment(player, e);
+    if (pay) {
+      const key = [...pay.cardIds].sort().join(',');
+      uniquePayments.set(key, pay);
+    }
+  }
+
+  if (uniquePayments.size === 0) return null;
+
+  let bestPlan: ScoredAction | null = null;
+
+  for (const [_, pay] of uniquePayments) {
+    const simState = cloneState(state);
+    const startResult = executeStartCollision(simState, {
+      type: 'startCollision',
+      paymentCardIds: pay.cardIds,
+    });
+    
+    let currentSimState = startResult.state;
+    const attackSequence: { attackerSlot: number; targetSlot: number | 'core' }[] = [];
+
+    // Greedy simulate attacks until no valid attackers remain (or game over)
+    while (true) {
+      if (currentSimState.phase === 'gameOver') break;
+      const bestAttack = findBestSimulatedAttack(currentSimState, state.currentPlayerIndex);
+      if (!bestAttack) break;
+
+      currentSimState = bestAttack.nextState;
+      attackSequence.push({
+        attackerSlot: bestAttack.attackerSlot,
+        targetSlot: bestAttack.targetSlot,
+      });
+    }
+
+    const finalScore = evaluateBoardFuture(currentSimState, state.currentPlayerIndex);
+
+    if (attackSequence.length > 0) {
+      if (!bestPlan || finalScore > bestPlan.score) {
+        bestPlan = {
+          action: { type: 'startCollision', paymentCardIds: pay.cardIds },
+          score: finalScore,
+          description: `collision: pay ${pay.energyPaid} (cards: ${pay.cardIds.length}) -> sequence: ${attackSequence.map(a => `${a.attackerSlot}->${a.targetSlot}`).join(', ')}`,
+        };
+      }
+    }
+  }
+
+  const endScore = evaluateBoardFuture(state, state.currentPlayerIndex) - 2;
+  if (bestPlan && bestPlan.score > endScore) {
+    return bestPlan;
+  }
+
+  return null;
 }
 
 /** Decide collision attacker when in overload / continuing collision. */
 export function decideCollisionAttacker(state: GameState): GameAction {
-  const attackers = getValidAttackers(state);
-  const player = getAIPlayer(state);
-  const targets = getValidCollisionTargets(state);
-
-  if (attackers.length === 0 || targets.length === 0) {
-    log.error('No valid attackers or targets in overload');
-    return { type: 'endTurn' };
+  const best = findBestSimulatedAttack(state, state.currentPlayerIndex);
+  if (best) {
+    log.info(`Collision attack: slot ${best.attackerSlot} → ${best.targetSlot}`);
+    return {
+      type: 'collisionAttack',
+      attackerSlot: best.attackerSlot,
+      targetSlot: best.targetSlot,
+    };
   }
-
-  // Pick attacker with highest value
-  let bestSlot = attackers[0];
-  let bestVal = 0;
-  for (const slot of attackers) {
-    const wc = player.wheels[slot];
-    if (wc) {
-      const v = getCardValue(wc.card);
-      if (v > bestVal) { bestVal = v; bestSlot = slot; }
-    }
-  }
-
-  // Pick best target
-  let bestTarget: number | 'core' = targets[0];
-  if (targets.includes('core')) {
-    bestTarget = 'core';
-  } else {
-    const opp = state.players[state.currentPlayerIndex === 0 ? 1 : 0];
-    // Prefer speed cards we can beat, then accel, then decel
-    let bestTargetScore = -Infinity;
-    for (const t of targets) {
-      if (t === 'core') continue;
-      const wc = opp.wheels[t];
-      if (!wc) continue;
-      let score = 0;
-      if (wc.state === 'accel' || wc.state === 'decel') score = 10;
-      else if (getCardValue(wc.card) < bestVal) score = 15 + getCardValue(wc.card);
-      else if (getCardValue(wc.card) === bestVal) score = -5;
-      else score = -15;
-      if (score > bestTargetScore) { bestTargetScore = score; bestTarget = t; }
-    }
-  }
-
-  log.info(`Collision attack: slot ${bestSlot} → ${bestTarget}`);
-  return { type: 'collisionAttack', attackerSlot: bestSlot, targetSlot: bestTarget };
+  log.error('No best attack found in overload');
+  return { type: 'endTurn' };
 }
