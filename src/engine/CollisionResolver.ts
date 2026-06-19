@@ -61,10 +61,11 @@ export function getValidAttackers(state: GameState): number[] {
   const player = state.players[state.currentPlayerIndex];
   const remaining = state.collisionState.remainingEnergy;
   const slots: number[] = [];
+  const attackedSlots = state.collisionState.attacks.map(a => a.attackerSlot);
 
   for (let i = 0; i < 4; i++) {
     const wc = player.wheels[i];
-    if (wc && wc.state === 'speed' && getCardValue(wc.card) <= remaining) {
+    if (wc && wc.state === 'speed' && getCardValue(wc.card) <= remaining && !attackedSlots.includes(i)) {
       slots.push(i);
     }
   }

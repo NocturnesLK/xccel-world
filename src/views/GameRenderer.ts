@@ -62,6 +62,7 @@ function getHintText(mode: InteractionMode): string {
     case 'mulligan': return '选择要换回的手牌，然后点击确认';
     case 'selectInitialSpeed': return '选择一张能量牌作为初始速度牌';
     case 'play': return '出牌阶段 — 点击手牌进行操作';
+    case 'selectCoreSlot': return '选择核心位置替换核心牌';
     case 'selectWheelSlot': return '选择一个车轮位放置卡牌';
     case 'selectCollisionPayment':
       return `选择手牌/氮气支付能量 (已选: ${mode.totalEnergy}点, 上限10点)`;
@@ -206,7 +207,7 @@ export class GameRenderer {
     const wL = this.mkEl('div', 'wheels-group');
     const wR = this.mkEl('div', 'wheels-group');
     for (let i = 0; i < 4; i++) {
-      (i < 2 ? wL : wR).appendChild(this.buildWheelSlot(p, i, isAI, mode));
+      (i < 2 ? wL : wR).appendChild(this.buildWheelSlot(p, i, isAI, state, mode));
     }
     field.append(wL, this.buildCoreSlot(p, isAI, mode), wR);
 
@@ -215,7 +216,7 @@ export class GameRenderer {
     c.append(deckArea, field, nitro);
   }
 
-  private buildWheelSlot(p: PlayerState, idx: number, isAI: boolean, mode: InteractionMode): HTMLElement {
+  private buildWheelSlot(p: PlayerState, idx: number, isAI: boolean, state: GameState, mode: InteractionMode): HTMLElement {
     const wc = p.wheels[idx];
     const pIdx = isAI ? 1 : 0;
     const slot = this.mkEl('div', 'card-slot');
@@ -224,19 +225,27 @@ export class GameRenderer {
     if (!wc) {
       slot.classList.add('empty');
       slot.innerHTML = `<span class="slot-label">W${idx + 1}</span>`;
-      if (!isAI && mode.type === 'selectWheelSlot' && mode.purpose === 'accel') {
-        slot.classList.add('placeable');
+      if (!isAI && mode.type === 'selectWheelSlot' && (mode.purpose === 'accel' || mode.purpose === 'both')) {
+        slot.classList.add('accel-placeable');
         slot.style.cursor = 'pointer';
       }
     } else {
       const cardEl = this.buildFieldCard(wc);
       slot.appendChild(cardEl);
 
-      if (!isAI && mode.type === 'selectWheelSlot' && mode.purpose === 'recover' && wc.state === 'decel') {
+      if (!isAI && mode.type === 'selectWheelSlot' && (mode.purpose === 'recover' || mode.purpose === 'both') && wc.state === 'decel') {
         slot.classList.add('placeable');
         slot.style.cursor = 'pointer';
       }
-      if (!isAI && mode.type === 'selectCollisionAttacker' && wc.state === 'speed') {
+      
+      const isValidAttacker =
+        !isAI &&
+        mode.type === 'selectCollisionAttacker' &&
+        wc.state === 'speed' &&
+        getCardValue(wc.card) <= mode.remainingEnergy &&
+        !(state.collisionState?.attacks.some((a: any) => a.attackerSlot === idx));
+
+      if (isValidAttacker) {
         cardEl.classList.add('attacker-selectable');
         cardEl.style.cursor = 'pointer';
         cardEl.addEventListener('click', () => this.callbacks.onCardClick(wc.card.id, 'field'));
@@ -278,6 +287,10 @@ export class GameRenderer {
       slot.classList.add('targetable');
       slot.style.cursor = 'pointer';
     }
+    if (!isAI && mode.type === 'selectCoreSlot') {
+      slot.classList.add('placeable');
+      slot.style.cursor = 'pointer';
+    }
     slot.addEventListener('click', () => this.callbacks.onCoreClick(pIdx));
     return slot;
   }
@@ -287,7 +300,10 @@ export class GameRenderer {
     const area = this.mkEl('div', 'nitro-area');
     const layers = Math.min(p.nitro.length, 4);
     let stack = '';
-    for (let i = 0; i < layers; i++) stack += '<div class="nitro-card-visual"></div>';
+    const backImg = getCardBackImagePath();
+    for (let i = 0; i < layers; i++) {
+      stack += `<div class="nitro-card-visual"><img src="${backImg}" alt="nitro back" style="width:100%; height:100%; object-fit:cover; border-radius:var(--card-radius);" /></div>`;
+    }
 
     area.innerHTML = `<div class="nitro-stack">${stack}</div>
       <span class="nitro-count">×${p.nitro.length}</span><span class="slot-label">氮气</span>`;
@@ -322,6 +338,11 @@ export class GameRenderer {
       case 'mulligan':
       case 'play':
         el.style.cursor = 'pointer'; break;
+      case 'selectCoreSlot':
+      case 'selectWheelSlot':
+        el.style.cursor = 'pointer';
+        if (mode.cardId === card.id) el.classList.add('selected');
+        break;
       case 'selectInitialSpeed':
         if (isEnergyCard(card)) el.style.cursor = 'pointer';
         else el.classList.add('disabled');
@@ -370,6 +391,7 @@ export class GameRenderer {
         btn('确认', 'confirm', () => this.callbacks.onConfirm(), mode.selectedSlots.length !== mode.count); break;
       case 'selectDiscardCards':
         btn('确认', 'confirm', () => this.callbacks.onConfirm(), mode.selectedCardIds.length !== mode.count); break;
+      case 'selectCoreSlot':
       case 'selectWheelSlot':
         btn('取消', '', () => this.callbacks.onCancel()); break;
       case 'gameOver':

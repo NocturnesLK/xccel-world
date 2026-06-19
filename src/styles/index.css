@@ -252,6 +252,13 @@ body {
   animation: pulse-green 1.5s ease-in-out infinite;
 }
 
+.card-slot.accel-placeable {
+  border-color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+  cursor: pointer;
+  animation: pulse-cyan 1.5s ease-in-out infinite;
+}
+
 .card-slot.core-slot {
   border-color: var(--accent-amber-dim);
 }
@@ -283,6 +290,7 @@ body {
   background: var(--bg-surface);
   border: 1px solid var(--accent-purple-dim);
   box-shadow: 0 0 8px var(--accent-purple-dim);
+  overflow: hidden;
 }
 
 /* offset stacked nitro cards visually */

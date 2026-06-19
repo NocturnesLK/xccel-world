@@ -68,13 +68,67 @@ export class UIManager {
   }
 
   private onHandCard(cardId: string): void {
-    switch (this.mode.type) {
-      case 'mulligan': this.onMulliganCard(cardId); break;
-      case 'selectInitialSpeed': this.onInitialSpeedCard(cardId); break;
-      case 'play': this.onPlayCard(cardId); break;
-      case 'selectCollisionPayment': this.onPaymentCard(cardId); break;
-      case 'selectDiscardCards': this.onDiscardCard(cardId); break;
-      default: log.trace('hand click ignored in mode', this.mode.type);
+    if (!this.state) return;
+    const player = this.getCurrentPlayer();
+    const card = findCardById(player.hand, cardId);
+    if (!card) return;
+
+    // 1. Multi-select modes
+    if (this.mode.type === 'mulligan') {
+      this.onMulliganCard(cardId);
+      return;
+    }
+    if (this.mode.type === 'selectCollisionPayment') {
+      this.onPaymentCard(cardId);
+      return;
+    }
+    if (this.mode.type === 'selectDiscardCards') {
+      this.onDiscardCard(cardId);
+      return;
+    }
+
+    // 2. Single-select modes (selectInitialSpeed, play, selectWheelSlot, selectCoreSlot)
+    // If the clicked card is already selected, deselect it and return to the base mode
+    if ((this.mode.type === 'selectWheelSlot' || this.mode.type === 'selectCoreSlot') && this.mode.cardId === cardId) {
+      this.pendingCardId = null;
+      if (this.state.phase === 'selectInitialSpeed') {
+        this.setMode({ type: 'selectInitialSpeed' });
+      } else {
+        this.setMode({ type: 'play' });
+      }
+      return;
+    }
+
+    // Otherwise, we are selecting a new card
+    if (this.mode.type === 'play' || this.mode.type === 'selectInitialSpeed' ||
+        this.mode.type === 'selectWheelSlot' || this.mode.type === 'selectCoreSlot') {
+      if (isCoreCard(card)) {
+        if (this.state.phase === 'play') {
+          this.pendingCardId = cardId;
+          this.setMode({ type: 'selectCoreSlot', cardId });
+        }
+        return;
+      }
+      if (isEnergyCard(card)) {
+        let purpose: 'accel' | 'recover' | 'both' = 'accel';
+        if (this.state.phase === 'play') {
+          const empty = getEmptyWheelSlots(player);
+          const decel = getDecelCards(player);
+          if (empty.length === 0 && decel.length === 0) {
+            log.warn('no available wheel slots');
+            return;
+          }
+          if (empty.length > 0 && decel.length > 0) {
+            purpose = 'both';
+          } else if (empty.length > 0) {
+            purpose = 'accel';
+          } else {
+            purpose = 'recover';
+          }
+        }
+        this.pendingCardId = cardId;
+        this.setMode({ type: 'selectWheelSlot', cardId, purpose });
+      }
     }
   }
 
@@ -101,6 +155,10 @@ export class UIManager {
     if (!this.state) return;
     if (this.mode.type === 'selectCollisionTarget' && playerIndex === 1) {
       this.onTargetClick(playerIndex, 'core');
+    } else if (this.mode.type === 'selectCoreSlot' && playerIndex === 0) {
+      // Confirm core replacement
+      this.emitAction({ type: 'update', cardId: this.mode.cardId });
+      this.pendingCardId = null;
     }
   }
 
@@ -127,10 +185,14 @@ export class UIManager {
 
   private handleCancel(): void {
     log.debug('cancel', { mode: this.mode.type });
-    if (['selectWheelSlot', 'selectCollisionPayment',
+    if (['selectWheelSlot', 'selectCoreSlot', 'selectCollisionPayment',
          'selectCollisionAttacker', 'selectCollisionTarget'].includes(this.mode.type)) {
       this.pendingCardId = null;
-      this.setMode({ type: 'play' });
+      if (this.state && this.state.phase === 'selectInitialSpeed') {
+        this.setMode({ type: 'selectInitialSpeed' });
+      } else {
+        this.setMode({ type: 'play' });
+      }
     }
   }
 
@@ -147,44 +209,6 @@ export class UIManager {
   private confirmMulligan(): void {
     this.emitAction({ type: 'mulligan', cardIds: [...this.mulliganSelected] });
     this.mulliganSelected = [];
-  }
-
-  // === Initial speed ===
-
-  private onInitialSpeedCard(cardId: string): void {
-    if (!this.state) return;
-    const card = findCardById(this.getCurrentPlayer().hand, cardId);
-    if (!card || !isEnergyCard(card)) return;
-    this.pendingCardId = cardId;
-    this.setMode({ type: 'selectWheelSlot', cardId, purpose: 'accel' });
-  }
-
-  // === Play mode ===
-
-  private onPlayCard(cardId: string): void {
-    if (!this.state) return;
-    const player = this.getCurrentPlayer();
-    const card = findCardById(player.hand, cardId);
-    if (!card) return;
-
-    if (isCoreCard(card)) {
-      this.emitAction({ type: 'update', cardId });
-      return;
-    }
-    if (isEnergyCard(card)) {
-      const empty = getEmptyWheelSlots(player);
-      const decel = getDecelCards(player);
-      if (empty.length === 0 && decel.length === 0) {
-        log.warn('no available wheel slots');
-        return;
-      }
-      // If only one type available, set purpose explicitly; otherwise default to accel
-      // (the slot click handler determines actual action based on slot state)
-      const purpose: 'accel' | 'recover' =
-        empty.length > 0 ? 'accel' : 'recover';
-      this.pendingCardId = cardId;
-      this.setMode({ type: 'selectWheelSlot', cardId, purpose });
-    }
   }
 
   // === Wheel slot selection (after card selected) ===
@@ -273,6 +297,9 @@ export class UIManager {
     if (this.mode.type !== 'selectCollisionAttacker' || !this.state) return;
     const wc = this.getCurrentPlayer().wheels[slot];
     if (!wc || wc.state !== 'speed') return;
+    if (getCardValue(wc.card) > this.mode.remainingEnergy) return;
+    if (this.state.collisionState?.attacks.some(a => a.attackerSlot === slot)) return;
+
     this.setMode({
       type: 'selectCollisionTarget',
       attackerSlot: slot,

@@ -170,7 +170,8 @@ export type InteractionMode =
   | { type: 'mulligan' }
   | { type: 'selectInitialSpeed' }
   | { type: 'play' }
-  | { type: 'selectWheelSlot'; cardId: string; purpose: 'accel' | 'recover' }
+  | { type: 'selectCoreSlot'; cardId: string }
+  | { type: 'selectWheelSlot'; cardId: string; purpose: 'accel' | 'recover' | 'both' }
   | { type: 'selectCollisionPayment'; selectedCardIds: string[]; totalEnergy: number }
   | { type: 'selectCollisionAttacker'; remainingEnergy: number }
   | { type: 'selectCollisionTarget'; attackerSlot: number; remainingEnergy: number }
