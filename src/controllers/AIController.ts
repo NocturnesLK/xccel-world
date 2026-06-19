@@ -83,6 +83,72 @@ function evaluateBoard(state: GameState, forPlayer: 0 | 1): number {
   return score;
 }
 
+function simulateSettlePhase(state: GameState, playerIndex: number): GameState {
+  const s = cloneState(state);
+  const player = s.players[playerIndex];
+
+  // 1. Discard all decel cards
+  for (let i = 0; i < 4; i++) {
+    const wc = player.wheels[i];
+    if (wc && wc.state === 'decel') {
+      player.discard.push(wc.card);
+      player.wheels[i] = null;
+    }
+  }
+
+  // 2. Check: drive count > hand count → must decelerate
+  const driveCount = getDriveCount(player);
+  const handCount = player.hand.length;
+  const diff = driveCount - handCount;
+
+  if (diff > 0) {
+    // Collect all current drive cards (speed or accel) after discarding decel
+    const driveCards: { slot: number; wc: WheelCard }[] = [];
+    for (let i = 0; i < 4; i++) {
+      const wc = player.wheels[i];
+      if (wc && (wc.state === 'speed' || wc.state === 'accel')) {
+        driveCards.push({ slot: i, wc });
+      }
+    }
+
+    // Sort drive cards exactly as in decideSettleDeceleration
+    const sorted = driveCards.sort((a, b) => {
+      if (a.wc.state !== b.wc.state) {
+        return a.wc.state === 'speed' ? -1 : 1; // prefer to decel speed over accel
+      }
+      return getCardValue(a.wc.card) - getCardValue(b.wc.card);
+    });
+
+    const slots = sorted.slice(0, diff).map(d => d.slot);
+
+    // Apply deceleration / discard in the simulation
+    for (const slot of slots) {
+      const wc = player.wheels[slot];
+      if (!wc) continue;
+      if (wc.state === 'speed') {
+        wc.state = 'decel';
+      } else if (wc.state === 'accel') {
+        player.discard.push(wc.card);
+        player.wheels[slot] = null;
+      }
+    }
+  }
+
+  // 3. Enforce nitro limit in simulation: nitro count <= drive count. Discard excess from top.
+  const finalDriveCount = getDriveCount(player);
+  while (player.nitro.length > finalDriveCount) {
+    const removed = player.nitro.pop()!;
+    player.discard.push(removed);
+  }
+
+  return s;
+}
+
+function evaluateBoardFuture(state: GameState, forPlayer: 0 | 1): number {
+  const settledState = simulateSettlePhase(state, forPlayer);
+  return evaluateBoard(settledState, forPlayer);
+}
+
 // ---------------------------------------------------------------------------
 // Action generation helpers
 // ---------------------------------------------------------------------------
@@ -191,7 +257,7 @@ export function decidePlayAction(state: GameState): GameAction {
   for (const card of actions.updateCards) {
     const simState = cloneState(state);
     const result = executeUpdate(simState, { type: 'update', cardId: card.id });
-    const score = evaluateBoard(result.state, state.currentPlayerIndex) + 5;
+    const score = evaluateBoardFuture(result.state, state.currentPlayerIndex) + 5;
     candidates.push({ action: { type: 'update', cardId: card.id }, score, description: `update core with ${card.rank}` });
   }
 
@@ -204,7 +270,7 @@ export function decidePlayAction(state: GameState): GameAction {
       for (const slot of actions.emptySlots.slice(0, 2)) {
         const simState = cloneState(state);
         const result = executeAccel(simState, { type: 'accel', cardId: card.id, wheelSlot: slot });
-        const score = evaluateBoard(result.state, state.currentPlayerIndex);
+        const score = evaluateBoardFuture(result.state, state.currentPlayerIndex);
         candidates.push({
           action: { type: 'accel', cardId: card.id, wheelSlot: slot },
           score,
@@ -223,7 +289,7 @@ export function decidePlayAction(state: GameState): GameAction {
       for (const slot of actions.decelSlots) {
         const simState = cloneState(state);
         const result = executeRecover(simState, { type: 'recover', cardId: card.id, wheelSlot: slot });
-        const score = evaluateBoard(result.state, state.currentPlayerIndex);
+        const score = evaluateBoardFuture(result.state, state.currentPlayerIndex);
         candidates.push({
           action: { type: 'recover', cardId: card.id, wheelSlot: slot },
           score,
@@ -242,7 +308,7 @@ export function decidePlayAction(state: GameState): GameAction {
   }
 
   // === End turn baseline ===
-  const endScore = evaluateBoard(state, state.currentPlayerIndex) - 2; // slight penalty to encourage action
+  const endScore = evaluateBoardFuture(state, state.currentPlayerIndex) - 2; // slight penalty to encourage action
   candidates.push({
     action: { type: 'endTurn' },
     score: endScore,
@@ -359,7 +425,7 @@ function planCollision(state: GameState): ScoredAction | null {
     type: 'collisionAttack', attackerSlot: attacker.slot, targetSlot: bestTarget,
   });
 
-  const finalScore = evaluateBoard(attackResult.state, state.currentPlayerIndex);
+  const finalScore = evaluateBoardFuture(attackResult.state, state.currentPlayerIndex);
 
   return {
     action: { type: 'startCollision', paymentCardIds: paymentIds },
