@@ -38,6 +38,7 @@ interface CachedElements {
   playerArea: HTMLElement;
   playerInfoBar: HTMLElement;
   bottomPanel: HTMLElement;
+  logContainer: HTMLElement;
   gameLog: HTMLElement;
   actionHint: HTMLElement;
   actionButtons: HTMLElement;
@@ -107,12 +108,23 @@ export class GameRenderer {
     board.append(aiHand, aiInfoBar, aiArea, divider, playerArea, playerInfoBar, playerHand);
 
     const bottomPanel = this.mkEl('div', 'bottom-panel');
+    
+    // Wrap gameLog in a container with a header for mobile
+    const logContainer = this.mkEl('div', 'log-container');
+    const logHeader = this.mkEl('div', 'log-header');
+    logHeader.innerHTML = `<span class="log-title">对战日志</span><button class="log-close-btn">&times;</button>`;
     const gameLog = this.mkEl('div', 'game-log');
+    logContainer.append(logHeader, gameLog);
+
+    logHeader.querySelector('.log-close-btn')!.addEventListener('click', () => {
+      logContainer.classList.remove('show');
+    });
+
     const actionBar = this.mkEl('div', 'action-bar');
     const actionHint = this.mkEl('div', 'action-hint');
     const actionButtons = this.mkEl('div', 'action-buttons');
     actionBar.append(actionHint, actionButtons);
-    bottomPanel.append(gameLog, actionBar);
+    bottomPanel.append(logContainer, actionBar);
     bottomPanel.style.display = 'none';
 
     const victoryOverlay = this.mkEl('div', 'victory-overlay');
@@ -122,7 +134,7 @@ export class GameRenderer {
     this.els = {
       startScreen, gameBoard: board, aiInfoBar, aiArea, aiHand,
       playerHand, playerArea, playerInfoBar,
-      bottomPanel, gameLog, actionHint, actionButtons, victoryOverlay,
+      bottomPanel, logContainer, gameLog, actionHint, actionButtons, victoryOverlay,
     };
   }
 
@@ -337,6 +349,11 @@ export class GameRenderer {
       case 'gameOver':
         btn('再来一局', 'primary', () => this.callbacks.onRestart()); break;
     }
+
+    // Always append a view log button for mobile drawer toggle (hidden on desktop via CSS)
+    btn('查看日志', 'btn-log', () => {
+      this.els.logContainer.classList.toggle('show');
+    });
   }
 
   // --- Game log ---

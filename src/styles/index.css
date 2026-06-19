@@ -451,6 +451,22 @@ body {
   flex-shrink: 0;
 }
 
+/* === Log Container & Header === */
+.log-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.log-header {
+  display: none;
+}
+
+.btn-log {
+  display: none !important;
+}
+
 /* === Game Log === */
 .game-log {
   flex: 1;
@@ -829,3 +845,274 @@ body {
   cursor: pointer;
   animation: pulse-cyan 1.5s ease-in-out infinite;
 }
+
+/* === Responsive / Mobile Portrait Styles === */
+@media (max-width: 768px) {
+  :root {
+    --card-width: 52px;
+    --card-height: 73px;
+    --card-radius: 4px;
+    --card-gap: 4px;
+  }
+
+  html, body {
+    overflow: auto; /* Allow scrolling if screen is extremely small */
+  }
+
+  #app {
+    flex-direction: column !important;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Game Board vertical stack */
+  .game-board {
+    flex: 1 !important;
+    padding: 8px 12px !important;
+    gap: 8px !important;
+    overflow-y: auto;
+    width: 100%;
+  }
+
+  /* Battle Divider compact */
+  .battle-divider {
+    margin: 8px 0 !important;
+  }
+
+  /* Info Bar compact */
+  .info-bar {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+    gap: 10px !important;
+    flex-wrap: wrap !important;
+    justify-content: center;
+    border-radius: 6px !important;
+  }
+
+  .info-bar .player-name {
+    font-size: 11px !important;
+  }
+
+  /* Player Area stack / Grid layout */
+  .player-area {
+    display: grid !important;
+    gap: 10px !important;
+    justify-items: center;
+    align-items: center;
+    padding: 4px 0 !important;
+    width: 100%;
+  }
+
+  .player-area.ai {
+    grid-template-areas:
+      "deck nitro"
+      "field field" !important;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .player-area.player {
+    grid-template-areas:
+      "field field"
+      "deck nitro" !important;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .deck-area {
+    grid-area: deck;
+    flex-direction: row !important;
+    gap: 8px !important;
+    min-width: auto !important;
+  }
+
+  .deck-pile, .discard-pile {
+    width: 42px !important;
+    height: 59px !important;
+    font-size: 10px !important;
+  }
+
+  .field-area {
+    grid-area: field;
+    width: 100%;
+    gap: 12px !important;
+    justify-content: center;
+  }
+
+  .wheels-group {
+    gap: 12px !important;
+  }
+
+  .nitro-area {
+    grid-area: nitro;
+    flex-direction: row !important;
+    gap: 8px !important;
+    min-width: auto !important;
+    align-items: center;
+  }
+
+  .nitro-stack {
+    width: var(--card-width) !important;
+    height: var(--card-height) !important;
+  }
+
+  /* AI Hand cards scaled down */
+  .hand-area.ai-hand .card {
+    width: 32px !important;
+    height: 45px !important;
+  }
+
+  /* Hand Area compact styling */
+  .hand-area {
+    min-height: calc(var(--card-height) + 16px) !important;
+    padding: 4px 0 !important;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .hand-area .card:hover {
+    transform: translateY(-8px) scale(1.04) !important;
+  }
+
+  .hand-area .card.selected {
+    transform: translateY(-12px) scale(1.06) !important;
+  }
+
+  .hand-area .card.payment-selected {
+    transform: translateY(-12px) scale(1.06) !important;
+  }
+
+  /* Bottom Panel as a horizontal bar */
+  .bottom-panel {
+    width: 100% !important;
+    height: auto !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border-subtle) !important;
+    padding: 8px 16px !important;
+    gap: 8px !important;
+    background: var(--bg-secondary) !important;
+    flex-shrink: 0 !important;
+  }
+
+  .action-bar {
+    width: 100%;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .action-hint {
+    min-height: auto !important;
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    width: 100%;
+  }
+
+  .action-buttons {
+    flex-direction: row !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    width: auto !important;
+    padding: 8px 12px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+  }
+
+  /* View log button show on mobile */
+  .btn-log {
+    display: inline-block !important;
+    border-color: var(--accent-purple) !important;
+    color: var(--accent-purple) !important;
+  }
+  .btn-log:hover {
+    background: rgba(170, 102, 255, 0.15) !important;
+    box-shadow: 0 0 12px var(--accent-purple-dim) !important;
+  }
+
+  /* Log Container as Slide-up Drawer */
+  .log-container {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60vh !important;
+    background: var(--bg-surface) !important;
+    border-top: 2px solid var(--accent-cyan) !important;
+    border-radius: 16px 16px 0 0 !important;
+    z-index: var(--z-modal) !important;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.85) !important;
+    transform: translateY(100%) !important;
+    transition: transform var(--anim-normal) cubic-bezier(0.4, 0, 0.2, 1) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0 16px 16px 16px !important;
+  }
+
+  .log-container.show {
+    transform: translateY(0) !important;
+  }
+
+  .log-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0 !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    margin-bottom: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .log-header .log-title {
+    font-family: var(--font-heading);
+    font-size: 13px !important;
+    font-weight: 700;
+    color: var(--accent-cyan);
+    letter-spacing: 1px;
+  }
+
+  .log-header .log-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px !important;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+  }
+
+  .game-log {
+    background: rgba(0, 0, 0, 0.15) !important;
+    border: none !important;
+    padding: 8px 0 !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Start Screen responsive text */
+  .start-screen h1 {
+    font-size: 32px !important;
+    letter-spacing: 4px !important;
+  }
+  
+  .start-screen .subtitle {
+    font-size: 12px !important;
+    letter-spacing: 3px !important;
+  }
+
+  /* Victory overlay */
+  .victory-modal {
+    padding: 24px 32px !important;
+    border-radius: 12px !important;
+    width: 85% !important;
+  }
+
+  .victory-modal h2 {
+    font-size: 22px !important;
+  }
+
+  .victory-modal .victory-type {
+    font-size: 14px !important;
+  }
+}
+
