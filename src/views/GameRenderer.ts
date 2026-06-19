@@ -418,6 +418,7 @@ export class GameRenderer {
     this.els.startScreen.style.display = 'none';
     this.els.gameBoard.style.display = 'flex';
     this.els.bottomPanel.style.display = 'flex';
+    this.els.victoryOverlay.style.display = 'none';
   }
 
   showVictory(winner: PlayerId, victoryType: string): void {
