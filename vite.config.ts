@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import path from 'path';
 
 export default defineConfig({
+  base: '/xccel-world/',
   publicDir: 'Resources',
   resolve: {
     alias: {
