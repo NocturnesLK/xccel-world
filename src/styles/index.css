@@ -371,10 +371,12 @@ body {
               margin var(--anim-fast) ease;
 }
 
-.hand-area .card:hover {
-  transform: translateY(-12px) scale(1.05);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 30;
+@media (hover: hover) {
+  .hand-area .card:hover {
+    transform: translateY(-12px) scale(1.05);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    z-index: 30;
+  }
 }
 
 .hand-area .card.selected {
@@ -1022,8 +1024,10 @@ body {
     width: 100%;
   }
 
-  .hand-area .card:hover {
-    transform: translateY(-8px) scale(1.04) !important;
+  @media (hover: hover) {
+    .hand-area .card:hover {
+      transform: translateY(-8px) scale(1.04) !important;
+    }
   }
 
   .hand-area .card.selected {
