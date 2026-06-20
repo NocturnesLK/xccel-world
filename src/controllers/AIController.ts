@@ -128,9 +128,10 @@ function getDecelSortValue(player: PlayerState, wc: WheelCard): number {
     }
   }
 
-  // If matchCount is 2, it is a critical pair for Accel Resonance (which needs core + drive >= 2 of same suit).
-  // If matchCount is 1, it is a single card of that suit, allowing Recover Resonance.
-  if (matchCount === 2) {
+  // Both Accel and Recover resonance now need core + drive >= 1 of same suit.
+  // matchCount >= 2 means multiple resonance sources (very valuable to keep).
+  // matchCount === 1 means a single resonance source (still valuable).
+  if (matchCount >= 2) {
     val += 25;
   } else if (matchCount === 1) {
     val += 15;
@@ -311,7 +312,7 @@ function getResonancePriority(player: PlayerState, card: Card, type: 'accel' | '
         count++;
       }
     }
-    return count >= 2 ? 30 : 0;
+    return count >= 1 ? 30 : 0;
   }
 }
 
@@ -346,7 +347,7 @@ export function decidePlayAction(state: GameState): GameAction {
         const currentRecoverRes = 1 + currentSuitDriveCount;
         const newRecoverRes = 1 + newSuitDriveCount;
         
-        if (currentAccelRes >= 2 && newAccelRes < 2) {
+        if (currentAccelRes >= 1 && newAccelRes < 1) {
           resonancePenalty -= 35;
         } else if (currentRecoverRes >= 1 && newRecoverRes < 1) {
           resonancePenalty -= 15;

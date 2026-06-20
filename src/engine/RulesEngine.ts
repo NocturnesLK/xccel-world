@@ -151,7 +151,7 @@ function checkAccelResonance(
   if (player.resonanceAccelSuit !== null && player.resonanceAccelSuit !== suit) return;
 
   // Count same-suit cards among core + drive cards (excluding the just-placed card)
-  // Rule: "若核心牌和驱动牌存在与打出的能量牌相同花色2张以上" (excluding the played card itself, meaning 3 matching cards total including played card)
+  // Rule: "若核心牌和其他驱动牌存在与打出的能量牌相同花色1张以上"
   let count = 0;
   if (player.core && player.core.suit === suit) count++;
   for (const wc of player.wheels) {
@@ -163,7 +163,7 @@ function checkAccelResonance(
     }
   }
 
-  if (count >= 2) {
+  if (count >= 1) {
     player.resonanceAccelSuit = suit;
     // Place top deck card into nitro (bottom of stack)
     if (player.deck.length > 0) {
