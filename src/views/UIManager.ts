@@ -104,6 +104,10 @@ export class UIManager {
         this.mode.type === 'selectWheelSlot' || this.mode.type === 'selectCoreSlot') {
       if (isCoreCard(card)) {
         if (this.state.phase === 'play') {
+          if (player.hasUpdatedThisTurn) {
+            log.warn('already updated this turn');
+            return;
+          }
           this.pendingCardId = cardId;
           this.setMode({ type: 'selectCoreSlot', cardId });
         }
@@ -174,6 +178,10 @@ export class UIManager {
     switch (this.mode.type) {
       case 'mulligan': this.confirmMulligan(); break;
       case 'play':
+        if (this.getCurrentPlayer().hasCollidedThisTurn) {
+          log.warn('already collided this turn');
+          break;
+        }
         // In play mode, confirm = start collision payment flow
         this.setMode({ type: 'selectCollisionPayment', selectedCardIds: [], totalEnergy: 0 });
         break;

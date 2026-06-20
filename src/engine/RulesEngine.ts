@@ -208,6 +208,8 @@ export function setupGame(): GameState {
       deckExhaustCount: 0,
       resonanceRecoverSuit: null,
       resonanceAccelSuits: [],
+      hasUpdatedThisTurn: false,
+      hasCollidedThisTurn: false,
     };
   };
 
@@ -329,9 +331,11 @@ export function executeDrawPhase(state: GameState): ActionResult {
 
   logs.push(makeLog(s.turnNumber, player.id, `—— 摸牌阶段 ——`, 'phase'));
 
-  // Reset per-turn resonance tracking
+  // Reset per-turn resonance and action tracking
   player.resonanceRecoverSuit = null;
   player.resonanceAccelSuits = [];
+  player.hasUpdatedThisTurn = false;
+  player.hasCollidedThisTurn = false;
 
   // All accel cards become speed cards
   let accelConverted = 0;
@@ -377,6 +381,11 @@ export function executeUpdate(state: GameState, action: UpdateAction): ActionRes
   const logs: GameLogEntry[] = [];
   const player = s.players[s.currentPlayerIndex];
 
+  if (player.hasUpdatedThisTurn) {
+    log.error('Already updated this turn', player.id);
+    return { state: s, logs };
+  }
+
   const card = findCardById(player.hand, action.cardId);
   if (!card || !isCoreCard(card)) {
     log.error('Invalid update card', action.cardId);
@@ -389,6 +398,7 @@ export function executeUpdate(state: GameState, action: UpdateAction): ActionRes
 
   player.hand = removeCardById(player.hand, action.cardId);
   player.core = card;
+  player.hasUpdatedThisTurn = true;
 
   // Draw 1 card
   drawCards(player, 1, logs, s.turnNumber);
@@ -466,6 +476,11 @@ export function executeStartCollision(state: GameState, action: StartCollisionAc
   const s = cloneState(state);
   const player = s.players[s.currentPlayerIndex];
 
+  if (player.hasCollidedThisTurn) {
+    log.error('Already collided this turn', player.id);
+    return { state: s, logs: [] };
+  }
+
   // Calculate and validate payment
   let totalEnergy = 0;
   const handPaymentCards: Card[] = [];
@@ -509,6 +524,7 @@ export function executeStartCollision(state: GameState, action: StartCollisionAc
     paymentCardIds: action.paymentCardIds,
     attacks: [],
   };
+  player.hasCollidedThisTurn = true;
 
   return { state: s, logs };
 }
@@ -678,11 +694,11 @@ export function getAvailableActions(state: GameState): {
   const hasTargets = getValidCollisionTargets(state).length > 0;
 
   return {
-    canUpdate: coreCardsInHand.length > 0,
+    canUpdate: coreCardsInHand.length > 0 && !player.hasUpdatedThisTurn,
     canAccel: energyCardsInHand.length > 0 && emptySlots.length > 0,
     canRecover: energyCardsInHand.length > 0 && decelSlots.length > 0,
-    canCollide: speedCards.length > 0 && totalAvailableEnergy >= minSpeedCost && hasTargets,
-    updateCards: coreCardsInHand,
+    canCollide: speedCards.length > 0 && totalAvailableEnergy >= minSpeedCost && hasTargets && !player.hasCollidedThisTurn,
+    updateCards: player.hasUpdatedThisTurn ? [] : coreCardsInHand,
     accelCards: energyCardsInHand,
     recoverCards: energyCardsInHand,
     emptySlots,

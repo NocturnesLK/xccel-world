@@ -8,7 +8,7 @@ import {
 } from '../models/types';
 import {
   getCardImagePath, getCardBackImagePath, cardDisplayName,
-  isEnergyCard, getCardValue,
+  isEnergyCard, isCoreCard, getCardValue,
 } from '../models/Card';
 import { createLogger } from '../logger';
 
@@ -327,17 +327,23 @@ export class GameRenderer {
     for (const card of player.hand) {
       const el = this.createCardElement(card, true);
       el.classList.add(`suit-${card.suit.toLowerCase()}`);
-      this.applyHandCardMode(el, card, mode);
+      this.applyHandCardMode(el, card, mode, player);
       el.addEventListener('click', () => this.callbacks.onCardClick(card.id, 'hand'));
       container.appendChild(el);
     }
   }
 
-  private applyHandCardMode(el: HTMLElement, card: Card, mode: InteractionMode): void {
+  private applyHandCardMode(el: HTMLElement, card: Card, mode: InteractionMode, player: PlayerState): void {
     switch (mode.type) {
       case 'mulligan':
-      case 'play':
         el.style.cursor = 'pointer'; break;
+      case 'play':
+        el.style.cursor = 'pointer';
+        if (isCoreCard(card) && player.hasUpdatedThisTurn) {
+          el.classList.add('disabled');
+          el.style.cursor = 'not-allowed';
+        }
+        break;
       case 'selectCoreSlot':
       case 'selectWheelSlot':
         el.style.cursor = 'pointer';
@@ -362,10 +368,10 @@ export class GameRenderer {
 
   private renderBottomPanel(state: GameState, mode: InteractionMode): void {
     this.els.actionHint.textContent = getHintText(mode);
-    this.renderActionButtons(mode);
+    this.renderActionButtons(state, mode);
   }
 
-  private renderActionButtons(mode: InteractionMode): void {
+  private renderActionButtons(state: GameState, mode: InteractionMode): void {
     const c = this.els.actionButtons;
     c.innerHTML = '';
     const btn = (text: string, cls: string, fn: () => void, disabled = false) => {
@@ -374,10 +380,12 @@ export class GameRenderer {
       b.addEventListener('click', fn); c.appendChild(b);
     };
     switch (mode.type) {
-      case 'play':
-        btn('碰撞', 'danger', () => this.callbacks.onConfirm());
+      case 'play': {
+        const player = state.players[state.currentPlayerIndex];
+        btn('碰撞', 'danger', () => this.callbacks.onConfirm(), player.hasCollidedThisTurn);
         btn('结束回合', 'primary', () => this.callbacks.onEndTurn());
         break;
+      }
       case 'selectCollisionPayment':
         btn(`确认支付 (${mode.totalEnergy})`, 'confirm', () => this.callbacks.onConfirm(), mode.totalEnergy === 0);
         btn('取消', '', () => this.callbacks.onCancel());

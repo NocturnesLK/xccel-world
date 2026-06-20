@@ -50,6 +50,10 @@ export interface PlayerState {
   resonanceRecoverSuit: Suit | null;
   // accel: any suit allowed, but each suit can only trigger ONCE per turn
   resonanceAccelSuits: Suit[];
+
+  // Per-turn action tracking (reset each turn)
+  hasUpdatedThisTurn: boolean;
+  hasCollidedThisTurn: boolean;
 }
 
 // === Game State ===
