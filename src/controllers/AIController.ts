@@ -118,23 +118,50 @@ function getDecelSortValue(player: PlayerState, wc: WheelCard): number {
     val += 100;
   }
 
-  // Resonance awareness: check how critical this card is to the player's core and drive suits.
+  // Resonance awareness under new rules:
+  // - ACCEL resonance: any suit, each once → diversity of suits on field is valuable.
+  //   Each card represents a potential accel resonance trigger. Any card with a same-suit
+  //   partner (core or drive) is valuable. The more unique suits on field, the more nitro.
+  // - RECOVER resonance: locked to ONE suit, unlimited triggers → suit CONCENTRATION matters.
+  //   Cards of the most concentrated suit are most valuable for chained recover resonance.
   const suit = wc.card.suit;
-  let matchCount = 0;
-  if (player.core && player.core.suit === suit) matchCount++;
+
+  // Count same-suit partners (core + other drive cards) for this card
+  let suitPartners = 0;
+  if (player.core && player.core.suit === suit) suitPartners++;
   for (const otherWc of player.wheels) {
-    if (otherWc && (otherWc.state === 'speed' || otherWc.state === 'accel') && otherWc.card.suit === suit) {
-      matchCount++;
+    if (otherWc && otherWc !== wc &&
+        (otherWc.state === 'speed' || otherWc.state === 'accel') &&
+        otherWc.card.suit === suit) {
+      suitPartners++;
     }
   }
 
-  // Both Accel and Recover resonance now need core + drive >= 1 of same suit.
-  // matchCount >= 2 means multiple resonance sources (very valuable to keep).
-  // matchCount === 1 means a single resonance source (still valuable).
-  if (matchCount >= 2) {
-    val += 25;
-  } else if (matchCount === 1) {
-    val += 15;
+  // Accel value: contributes a unique suit to the field (each suit triggers accel resonance once)
+  // If this card is the only representative of its suit on field, removing it cuts accel potential.
+  const suitsOnField = new Set<string>();
+  if (player.core) suitsOnField.add(player.core.suit);
+  for (const otherWc of player.wheels) {
+    if (otherWc && (otherWc.state === 'speed' || otherWc.state === 'accel')) {
+      suitsOnField.add(otherWc.card.suit);
+    }
+  }
+  const sameCount = [...player.wheels].filter(
+    w => w && (w.state === 'speed' || w.state === 'accel') && w.card.suit === suit
+  ).length;
+  if (sameCount === 1 && !player.core?.suit) {
+    // Sole representative of this suit on field — losing it loses accel resonance potential
+    val += 20;
+  }
+
+  // Recover value: concentrated suits allow unlimited chained recover resonance.
+  // The suit with the most drive cards is most worth protecting.
+  if (suitPartners >= 2) {
+    // Strong concentration — cornerstone of recover resonance chain
+    val += 28;
+  } else if (suitPartners === 1) {
+    // Pair — still valuable for recover resonance
+    val += 14;
   }
 
   return val;
@@ -293,24 +320,37 @@ export function decideSettleDeceleration(state: GameState, count: number): GameA
 
 function getResonancePriority(player: PlayerState, card: Card, type: 'accel' | 'recover'): number {
   const suit = card.suit;
+
   if (type === 'recover') {
-    if (player.resonanceRecoverSuits.includes(suit)) return 0;
+    // Recover resonance: locked to ONE suit per turn, UNLIMITED triggers of that suit.
+    // Strategy: concentrate on the locked suit (or the best candidate suit if not yet locked).
+    if (player.resonanceRecoverSuit !== null && player.resonanceRecoverSuit !== suit) return 0; // wrong suit, zero priority
+
+    // Count same-suit partners for recover resonance check
     let count = 0;
     if (player.core && player.core.suit === suit) count++;
     for (const wc of player.wheels) {
-      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
-        count++;
-      }
+      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) count++;
     }
-    return count >= 1 ? 20 : 0;
+
+    // How many same-suit cards do we have in hand (incl. this card)? More = bigger burst potential.
+    const handSameCount = player.hand.filter(c => c.suit === suit && c.id !== card.id).length;
+    if (count >= 1) {
+      // Already locked or lockable — high priority; bonus for burst potential
+      return 20 + handSameCount * 5;
+    }
+    return 0;
+
   } else { // accel
-    if (player.resonanceAccelSuit !== null && player.resonanceAccelSuit !== suit) return 0;
+    // Accel resonance: ANY suit, but each suit only ONCE per turn.
+    // Strategy: prefer suits not yet used for accel resonance this turn.
+    if (player.resonanceAccelSuits.includes(suit)) return 0; // this suit already used this turn
+
+    // Count same-suit partners
     let count = 0;
     if (player.core && player.core.suit === suit) count++;
     for (const wc of player.wheels) {
-      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
-        count++;
-      }
+      if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) count++;
     }
     return count >= 1 ? 30 : 0;
   }
@@ -331,7 +371,12 @@ export function decidePlayAction(state: GameState): GameAction {
     const simState = cloneState(state);
     const result = executeUpdate(simState, { type: 'update', cardId: card.id });
     
-    // Evaluate resonance penalty
+    // Resonance penalty under new rules:
+    // - Accel: field suit DIVERSITY matters. Core contributes one suit. Switching core to a
+    //   suit already covered by drives doesn't add new accel potential, but switching away
+    //   from a suit only the core provides DOES reduce accel potential.
+    // - Recover: suit CONCENTRATION matters. Core contributes to recover chain for its suit.
+    //   Switching core breaks the concentration if drives are all of the current core suit.
     let resonancePenalty = 0;
     if (player.core) {
       const currentSuit = player.core.suit;
@@ -340,16 +385,24 @@ export function decidePlayAction(state: GameState): GameAction {
         const driveCards = getDriveCards(player);
         const currentSuitDriveCount = driveCards.filter(d => d.wc.card.suit === currentSuit).length;
         const newSuitDriveCount = driveCards.filter(d => d.wc.card.suit === newSuit).length;
-        
-        const currentAccelRes = 1 + currentSuitDriveCount;
-        const newAccelRes = 1 + newSuitDriveCount;
-        
-        const currentRecoverRes = 1 + currentSuitDriveCount;
-        const newRecoverRes = 1 + newSuitDriveCount;
-        
-        if (currentAccelRes >= 1 && newAccelRes < 1) {
+
+        // Accel penalty: if current core is the ONLY source of currentSuit on field,
+        // switching loses an accel resonance opportunity for that suit.
+        if (currentSuitDriveCount === 0) {
+          // Core is sole source of currentSuit — switching loses that suit's accel potential
+          resonancePenalty -= 20;
+        }
+        // Accel bonus: if newSuit has no field presence, switching adds a new unique suit
+        if (newSuitDriveCount === 0) {
+          resonancePenalty += 10; // adds new accel resonance suit
+        }
+
+        // Recover penalty: if drives are heavily concentrated in currentSuit,
+        // switching core breaks the recover chain concentration.
+        if (currentSuitDriveCount >= 2) {
+          // Drives are concentrated on current core suit — high recover chain value
           resonancePenalty -= 35;
-        } else if (currentRecoverRes >= 1 && newRecoverRes < 1) {
+        } else if (currentSuitDriveCount >= 1) {
           resonancePenalty -= 15;
         }
       }
