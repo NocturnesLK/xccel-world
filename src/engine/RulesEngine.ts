@@ -532,7 +532,13 @@ export function executeStartCollision(state: GameState, action: StartCollisionAc
 /** Execute a single collision attack (attacker → target). */
 export function executeCollisionAttack(state: GameState, action: CollisionAttackAction): ActionResult {
   const s = cloneState(state);
-  return collisionAttack(s, action.attackerSlot, action.targetSlot);
+  const result = collisionAttack(s, action.attackerSlot, action.targetSlot);
+
+  // Enforce nitro limit for both players immediately after any collision attack
+  enforceNitroLimit(result.state.players[0], result.logs, result.state.turnNumber);
+  enforceNitroLimit(result.state.players[1], result.logs, result.state.turnNumber);
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
