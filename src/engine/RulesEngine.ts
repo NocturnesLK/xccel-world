@@ -119,20 +119,22 @@ function checkRecoverResonance(
   logs: GameLogEntry[],
 ): void {
   const suit = playedCard.suit;
-  // Recover resonance: locked to one suit per turn (unlimited triggers of that suit)
-  if (player.resonanceRecoverSuit !== null && player.resonanceRecoverSuit !== suit) return;
+  if (player.resonanceRecoverSuits.includes(suit)) return; // already used this suit
 
   // Count same-suit cards among core + drive cards (excluding the just-placed card)
   let count = 0;
   if (player.core && player.core.suit === suit) count++;
   for (const wc of player.wheels) {
     if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
-      if (wc.card.id !== playedCard.id) count++;
+      // Don't count the card we just placed
+      if (wc.card.id !== playedCard.id) {
+        count++;
+      }
     }
   }
 
   if (count >= 1) {
-    player.resonanceRecoverSuit = suit; // lock this suit for the rest of the turn
+    player.resonanceRecoverSuits.push(suit);
     drawCards(player, 1, logs, state.turnNumber);
     checkDeckExhaustion(player, logs, state.turnNumber);
     logs.push(makeLog(state.turnNumber, player.id, `恢复共鸣(${suit})：摸1张`, 'resonance'));
@@ -145,8 +147,8 @@ function checkAccelResonance(
   logs: GameLogEntry[],
 ): void {
   const suit = playedCard.suit;
-  // Accel resonance: any suit allowed, but each suit can only trigger ONCE per turn
-  if (player.resonanceAccelSuits.includes(suit)) return;
+  // Only one suit can resonate for accel per turn
+  if (player.resonanceAccelSuit !== null && player.resonanceAccelSuit !== suit) return;
 
   // Count same-suit cards among core + drive cards (excluding the just-placed card)
   // Rule: "若核心牌和其他驱动牌存在与打出的能量牌相同花色1张以上"
@@ -154,12 +156,16 @@ function checkAccelResonance(
   if (player.core && player.core.suit === suit) count++;
   for (const wc of player.wheels) {
     if (wc && (wc.state === 'speed' || wc.state === 'accel') && wc.card.suit === suit) {
-      if (wc.card.id !== playedCard.id) count++;
+      // Don't count the card we just placed
+      if (wc.card.id !== playedCard.id) {
+        count++;
+      }
     }
   }
 
   if (count >= 1) {
-    player.resonanceAccelSuits.push(suit); // mark this suit as used for accel resonance
+    player.resonanceAccelSuit = suit;
+    // Place top deck card into nitro (bottom of stack)
     if (player.deck.length > 0) {
       const nitroCard = player.deck.shift()!;
       player.nitro.unshift(nitroCard); // add to bottom
@@ -206,8 +212,8 @@ export function setupGame(): GameState {
       discard: [],
       excluded: [...excluded, ...excludedMain],
       deckExhaustCount: 0,
-      resonanceRecoverSuit: null,
-      resonanceAccelSuits: [],
+      resonanceRecoverSuits: [],
+      resonanceAccelSuit: null,
       hasUpdatedThisTurn: false,
       hasCollidedThisTurn: false,
     };
@@ -332,8 +338,8 @@ export function executeDrawPhase(state: GameState): ActionResult {
   logs.push(makeLog(s.turnNumber, player.id, `—— 摸牌阶段 ——`, 'phase'));
 
   // Reset per-turn resonance and action tracking
-  player.resonanceRecoverSuit = null;
-  player.resonanceAccelSuits = [];
+  player.resonanceRecoverSuits = [];
+  player.resonanceAccelSuit = null;
   player.hasUpdatedThisTurn = false;
   player.hasCollidedThisTurn = false;
 

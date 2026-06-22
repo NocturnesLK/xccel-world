@@ -46,10 +46,10 @@ export interface PlayerState {
   deckExhaustCount: number; // tracks times deck ran out for victory condition
 
   // Per-turn resonance tracking (reset each turn)
-  // recover: locked to ONE suit for the whole turn (unlimited triggers of same suit)
-  resonanceRecoverSuit: Suit | null;
-  // accel: any suit allowed, but each suit can only trigger ONCE per turn
-  resonanceAccelSuits: Suit[];
+  // recover: any suit allowed, but each suit can only trigger ONCE per turn
+  resonanceRecoverSuits: Suit[];
+  // accel: locked to ONE suit for the whole turn (unlimited triggers of same suit)
+  resonanceAccelSuit: Suit | null;
 
   // Per-turn action tracking (reset each turn)
   hasUpdatedThisTurn: boolean;
